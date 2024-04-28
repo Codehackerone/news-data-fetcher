@@ -50,14 +50,17 @@ def main(
         langauges=langauges,
         countries=countries,
         save_json=True,
-        save_path=save_path,        
+        save_path=save_path,
     )
     url_time = time_elapsed.get_time_elapsed()
     print("Time taken to fetch URLs: ", url_time)
 
     data_fetcher = DataFetcher()
     data_fetcher.main(
-        article_urls=article_urls, save_json=True, save_csv=True, save_path=save_path,
+        article_urls=article_urls,
+        save_json=True,
+        save_csv=True,
+        save_path=save_path,
         multithreaded=True,
     )
     total_time = time_elapsed.get_time_elapsed()
@@ -67,9 +70,9 @@ def main(
 
 if __name__ == "__main__":
     main(
-        keywords=["Google"],
-        start_date=datetime.datetime(2024, 4, 20),
-        end_date=datetime.datetime(2024, 4, 15),
+        keywords=["gaza war"],
+        # start_date=datetime.datetime(2024, 4, 20),
+        # end_date=datetime.datetime(2024, 4, 15),
         timedelta=3,
         langauges=["en"],
         countries=["US"],

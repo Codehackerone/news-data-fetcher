@@ -25,7 +25,6 @@ headers = {
 RETRY_LIMIT = 3
 
 
-
 class DataFetcher:
     def __init__(self) -> None:
         self.successful_requests = 0
@@ -38,18 +37,18 @@ class DataFetcher:
     def add_punctuation_whitespace(text: str) -> str:
         """
         Add whitespace after punctuation marks and fix edge cases with numbers
-        
+
         Args:
             text: text to be processed
-            
+
         Returns:
             text: processed text
-        """        
-        sentences = nltk.sent_tokenize(text)        
+        """
+        sentences = nltk.sent_tokenize(text)
         for i in range(len(sentences)):
             if sentences[i][-1] not in ".!?":
-                sentences[i] += "."        
-        text = " ".join(sentences)        
+                sentences[i] += "."
+        text = " ".join(sentences)
         pattern = (
             r"(?<=[^\s\d])("
             + "|".join(re.escape(x) for x in ".!?,;:")
@@ -60,7 +59,7 @@ class DataFetcher:
         text = re.sub(r"(\d) (?=\d{3}([^\d]|$))", r"\1,", text)
         # Fix edge case with hyphenated words.
         text = re.sub(r"(\w) - (?=\w)", r"\1-", text)
-        # Add whitespace after numbers followed by punctuation marks        
+        # Add whitespace after numbers followed by punctuation marks
         pattern = r"(?<=\d)(\.(?=\D)|\-(?=\D)|/(?=\D))(?!\d)"
         text = re.sub(pattern, r"\1 ", text)
         return text
@@ -118,7 +117,7 @@ class DataFetcher:
         Returns:
             _type_: _description_
         """
-        article_content = {}
+        article_dict = {}
         article_content = article.cleaned_text
         if article_content is None or article_content.strip() == "":
             article_content = article.meta_description
@@ -130,10 +129,10 @@ class DataFetcher:
             #     detect_lang_and_translate=True
             # )
 
-            article_content["Content"] = article_content
-            article_content["URL"] = url
-            article_content["Title"] = article_title
-            article_content["keyword"] = keyword
+            article_dict["Content"] = article_content
+            article_dict["URL"] = url
+            article_dict["Title"] = article_title
+            article_dict["keyword"] = keyword
             # article_content['multilingual_response'] = multilingual_response
 
             article_publish = article.publish_datetime_utc
@@ -142,26 +141,26 @@ class DataFetcher:
                     article_publish = article_publish.astimezone(pytz.UTC)
                     if article_publish > datetime.datetime.now(datetime.timezone.utc):
                         article_publish = datetime.datetime.now(datetime.timezone.utc)
-                    article_content["Time"] = datetime.datetime.strftime(
+                    article_dict["Time"] = datetime.datetime.strftime(
                         article_publish, "%Y-%m-%d %H:%M"
                     )
                 except Exception:
                     print("exception occurred when parsing article_publish.")
-                    article_content["Time"] = datetime.datetime.strftime(
+                    article_dict["Time"] = datetime.datetime.strftime(
                         datetime.now(datetime.timezone.utc), "%Y-%m-%d %H:%M"
                     )
             else:
-                article_content["Time"] = datetime.datetime.strftime(
+                article_dict["Time"] = datetime.datetime.strftime(
                     datetime.datetime.now(datetime.timezone.utc), "%Y-%m-%d %H:%M"
                 )
-        return article_content
+        return article_dict
 
     async def make_request(self, url: str, keyword: str) -> None:
         """Fetches data from a given URL
 
         Args:
             url (_type_): _description_
-        """        
+        """
         try:
             article = goose_object.extract(url=url)
             goose_extracted_content = self.get_article_content(article, url, keyword)
@@ -187,15 +186,16 @@ class DataFetcher:
                 traceback.print_exc()
                 print("ERROR", f"error in fetching data. Error: {e}", url)
                 self.rejected_urls.append({"url": url, "keyword": keyword})
-                
+
     def make_request_threaded(self, url: str, keyword: str) -> None:
         """Fetches data from a given URL
 
         Args:
             url (_type_): _description_
-        """        
+        """
         try:
             article = goose_object.extract(url=url)
+            # print(article.)
             goose_extracted_content = self.get_article_content(article, url, keyword)
             self.article_data.append(goose_extracted_content)
 
@@ -207,7 +207,6 @@ class DataFetcher:
                     headers=headers,
                     timeout=requests_timeout,
                 )
-                print("response", type(response.text))
                 # Extract news data from the HTML content
                 article = goose_object.extract(raw_html=response.text)
                 goose_extracted_content = self.get_article_content(
@@ -237,21 +236,30 @@ class DataFetcher:
             tasks.append(self.make_request(url["link"], url["keyword"]))
 
         return await asyncio.gather(*tasks)
-    
+
     def create_requests_multithreaded(self, article_urls, number_of_processes=5):
-        processes = []  
+        processes = []
         for urls in article_urls:
             # self.semaphore.acquire()
-            p = Process(target=self.make_request_threaded(url=urls["link"], keyword=urls["keyword"]))
+            p = Process(
+                target=self.make_request_threaded(
+                    url=urls["link"], keyword=urls["keyword"]
+                )
+            )
             processes.append(p)
             p.start()
-        
+
         for p in processes:
             p.join()
-            
-            
-                
-    def main(self, article_urls, save_path, save_json=True, save_csv=True, multithreaded=False):
+
+    def main(
+        self,
+        article_urls,
+        save_path,
+        save_json=True,
+        save_csv=True,
+        multithreaded=False,
+    ):
         """_summary_
 
         Args:
@@ -288,12 +296,12 @@ if __name__ == "__main__":
     data_fetcher.main(
         article_urls=[
             {
-                "link": "https://www.sportsbusinessjournal.com/Articles/2024/02/26/technology",
-                "keyword": "Apple",
+                "link": "https://amp.newsobserver.com/news/local/education/article288048150.html",
+                "keyword": "Gaza war",
             },
-        ]*10,
+        ],
         save_json=False,
         save_csv=False,
         save_path=save_path,
-        multithreaded=True
+        multithreaded=True,
     )
