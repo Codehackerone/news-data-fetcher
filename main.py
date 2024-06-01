@@ -19,7 +19,6 @@ def main(
     langauges=["en"],
     countries=["US"],
 ):
-
     if not start_date:
         start_date = datetime.datetime.now()
         end_date = datetime.datetime.now() - datetime.timedelta(days=timedelta)
@@ -55,7 +54,7 @@ def main(
     url_time = time_elapsed.get_time_elapsed()
     print("Time taken to fetch URLs: ", url_time)
 
-    data_fetcher = DataFetcher()
+    data_fetcher = DataFetcher(number_of_threads=5)
     data_fetcher.main(
         article_urls=article_urls,
         save_json=True,

@@ -12,6 +12,7 @@ import pandas as pd
 import os
 import traceback
 from multiprocessing import Semaphore, Process
+import threading
 
 
 requests_timeout = 10
@@ -26,12 +27,18 @@ RETRY_LIMIT = 3
 
 
 class DataFetcher:
-    def __init__(self) -> None:
+    def __init__(self, number_of_threads=5, max_batch_size=500) -> None:
         self.successful_requests = 0
         self.article_data = []
         self.rejected_urls = []
-        self.number_of_processes = 5
+        self.number_of_processes = number_of_threads
         self.semaphore = Semaphore(self.number_of_processes)
+        self.current_save_batch = 0
+        self.max_batch_size = max_batch_size
+        self.save_path = ""
+        self.save_json = True
+        self.save_csv = True
+        self.total_successful_extracted = 0
 
     @staticmethod
     def add_punctuation_whitespace(text: str) -> str:
@@ -179,6 +186,8 @@ class DataFetcher:
                 goose_extracted_content = self.get_article_content(
                     article, url, keyword
                 )
+                with Semaphore(1):
+                    self.total_successful_extracted += 1
                 self.article_data.append(goose_extracted_content)
                 if not goose_extracted_content:
                     print("goose extractor ~ EmptyExtractedContentError", url, keyword)
@@ -186,6 +195,10 @@ class DataFetcher:
                 traceback.print_exc()
                 print("ERROR", f"error in fetching data. Error: {e}", url)
                 self.rejected_urls.append({"url": url, "keyword": keyword})
+        finally:
+            with Semaphore(1):
+                if len(self.article_data) >= self.max_batch_size:
+                    self.save(self.save_path, self.save_json, self.save_csv)
 
     def make_request_threaded(self, url: str, keyword: str) -> None:
         """Fetches data from a given URL
@@ -212,6 +225,8 @@ class DataFetcher:
                 goose_extracted_content = self.get_article_content(
                     article, url, keyword
                 )
+                with Semaphore(1):
+                    self.total_successful_extracted += 1
                 self.article_data.append(goose_extracted_content)
                 if not goose_extracted_content:
                     print("goose extractor ~ EmptyExtractedContentError", url, keyword)
@@ -219,14 +234,34 @@ class DataFetcher:
                 traceback.print_exc()
                 print("ERROR", f"error in fetching data. Error: {e}", url)
                 self.rejected_urls.append({"url": url, "keyword": keyword})
+        finally:
+            with Semaphore(1):
+                if len(self.article_data) >= self.max_batch_size:
+                    self.save(self.save_path, self.save_json, self.save_csv)
 
-    def save_json(self, data, filename):
+    def save(self, file_path, save_json, save_csv):
+        data = self.article_data
+
+        if save_json:
+            os.makedirs(file_path + "/json", exist_ok=True)
+            self.save_json_file(
+                data, file_path + "/json/" + str(self.current_save_batch) + ".json"
+            )
+        if save_csv:
+            os.makedirs(file_path + "/csv", exist_ok=True)
+            self.save_csv_file(
+                data, file_path + "/csv/" + str(self.current_save_batch) + ".xlsx"
+            )
+        self.current_save_batch += 1
+        self.article_data = []
+
+    def save_json_file(self, data, filename):
         with open(filename, "w") as f:
             json.dump(data, f, indent=4)
 
-    def save_csv(self, data, filename):
+    def save_csv_file(self, data, filename):
         df = pd.DataFrame(data)
-        df.to_csv(filename, index=False)
+        df.to_excel(filename, index=False)
 
     async def create_extract_requests(self, article_urls):
         # Create couroutine for each URL
@@ -237,20 +272,23 @@ class DataFetcher:
 
         return await asyncio.gather(*tasks)
 
-    def create_requests_multithreaded(self, article_urls, number_of_processes=5):
-        processes = []
-        for urls in article_urls:
-            # self.semaphore.acquire()
-            p = Process(
-                target=self.make_request_threaded(
-                    url=urls["link"], keyword=urls["keyword"]
-                )
-            )
-            processes.append(p)
-            p.start()
+    def create_requests_multithreaded(self, article_urls):
+        semaphore = threading.Semaphore(self.number_of_processes)
+        threads = []
 
-        for p in processes:
-            p.join()
+        def thread_function(url, keyword):
+            with semaphore:
+                self.make_request_threaded(url, keyword)
+
+        for urls in article_urls:
+            t = threading.Thread(
+                target=thread_function, args=(urls["link"], urls["keyword"])
+            )
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
 
     def main(
         self,
@@ -265,6 +303,9 @@ class DataFetcher:
         Args:
             keywords (_type_): _description_
         """
+        self.save_path = save_path
+        self.save_json = save_json
+        self.save_csv = save_csv
         if multithreaded:
             print("[INFO] Running in multithreaded mode.")
             self.create_requests_multithreaded(article_urls)
@@ -275,15 +316,16 @@ class DataFetcher:
         # Rejected URLs
         print("Length of rejected URLs: ", len(self.rejected_urls))
         save_file_rejected = f"{save_path}/rejected_urls.json"
-        self.save_json(self.rejected_urls, save_file_rejected)
+        self.save_json_file(self.rejected_urls, save_file_rejected)
 
-        print("Length of article extracted: ", len(self.article_data))
-        save_path = f"{save_path}/scrapped_data"
-        if save_json:
-            self.save_json(self.article_data, save_path + ".json")
+        print("Length of article extracted: ", self.total_successful_extracted)
+        self.save(save_path, save_json, save_csv)
+        # save_path = f"{save_path}/scrapped_data"
+        # if save_json:
+        #     self.save_json(self.article_data, save_path + ".json")
 
-        if save_csv:
-            self.save_csv(self.article_data, save_path + ".csv")
+        # if save_csv:
+        #     self.save_csv(self.article_data, save_path + ".csv")
 
         print("Data fetched successfully")
 
@@ -303,5 +345,5 @@ if __name__ == "__main__":
         save_json=False,
         save_csv=False,
         save_path=save_path,
-        multithreaded=True,
+        multithreaded=False,
     )
